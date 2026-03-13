@@ -23,24 +23,36 @@ Anyone in higher education who works with student-level data and wants to use AI
 - Financial aid analysts
 - Academic advisors working with student data
 
-## Installation
+## Installation (Recommended)
 
-### Option A: Claude Code Skill (Recommended)
+Two steps: install the skill, then add a one-line trigger to your global config.
 
-Copy the `SKILL.md` file into your Claude Code skills directory:
+### Step 1: Install the skill
+
+Copy `SKILL.md` into your Claude Code skills directory:
 
 ```bash
 mkdir -p ~/.claude/skills/ferpa-guardrail
 cp SKILL.md ~/.claude/skills/ferpa-guardrail/SKILL.md
 ```
 
-Claude Code will automatically discover and apply the skill when relevant.
+### Step 2: Add the trigger to your global CLAUDE.md
 
-### Option B: Project-Level CLAUDE.md
+Open (or create) `~/.claude/CLAUDE.md` and add this line:
 
-Copy the content of `SKILL.md` (everything below the YAML frontmatter) into a `CLAUDE.md` file in the root of your project folder. Claude Code reads this file automatically at the start of every session in that directory.
+```
+When working with university, college, or higher education data, always use the ferpa-guardrail skill.
+```
 
-### Option C: Session Paste
+This ensures the guardrail activates in every session where you work with higher ed data, regardless of which project folder you are in. The trigger line is always in context (global CLAUDE.md loads every session), while the full interception logic only loads when relevant.
+
+## Alternative Installation
+
+### Project-level CLAUDE.md
+
+If you prefer the guardrail only in specific projects, copy the full content of `SKILL.md` (everything below the YAML frontmatter) into a `CLAUDE.md` file in that project's root folder. Claude Code reads it automatically at the start of every session in that directory. This is the most reliable method for a single project, since the instructions are always in context.
+
+### Session paste
 
 Copy the content and paste it as your first message in a new Claude Code session. It will apply for that session only.
 
