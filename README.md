@@ -1,16 +1,17 @@
 # FERPA Guardrail for Claude Code
 
-A drop-in skill that prevents FERPA-protected student data from entering AI conversations when using Claude Code for higher education data work.
+A drop-in skill that checks for FERPA-protected student data before Claude Code reads any file. When PII columns are detected, it stops, flags them, and provides a script to strip them locally.
 
 ## What It Does
 
-When installed, this skill instructs Claude Code to:
+When you ask Claude Code to read a data file, this skill intercepts the read and:
 
-- **Refuse** to accept or process actual student PII (names, IDs, emails, grades, SSNs)
-- **Enforce** a describe-then-code workflow: you tell Claude what your data looks like, Claude writes code, you run it locally against your real data
-- **Intercept file reads** by scanning column headers for PII before reading any data rows, and providing a drop-columns script if PII is detected
-- **Stop and warn** if you accidentally paste something that looks like real student records
-- **Never generate code** that sends student data to external services
+1. **Reads only the column headers first** (no data rows)
+2. **Scans for PII columns** (names, IDs, SSNs, emails, phone numbers, addresses)
+3. **Stops and warns you** if PII columns are found, with a ready-to-run script to strip them
+4. **Proceeds only after you confirm** the PII has been removed
+
+It also warns you if you accidentally paste student data directly into the conversation, and prevents code generation that would send data to external services.
 
 ## Who This Is For
 
@@ -45,21 +46,9 @@ Copy the content and paste it as your first message in a new Claude Code session
 
 ## How It Works
 
-### The Standard Workflow
+The skill does not restrict how you use Claude Code. You can still ask it to read files, clean data, build models, and do everything you normally would. The only difference is that before reading any data file, Claude checks the column headers for PII and asks you to strip identifier columns if it finds any.
 
-1. You describe your data to Claude (column names, data types, row counts, what you want to analyze)
-2. Claude writes Python/R code based on your description
-3. You run the code locally on your machine
-4. Your real data files never appear in the conversation
-
-### The File Read Check
-
-When you ask Claude to read a data file (for cleaning, inspection, etc.):
-
-1. Claude reads **only the column headers** first
-2. It scans for columns that look like PII (names, IDs, emails, SSNs, etc.)
-3. If PII columns are found, Claude **stops** and gives you a script to strip them locally
-4. Only after you confirm PII is removed does Claude read the actual data
+For users who want maximum safety, the skill also documents an optional workflow where you describe your data structure to Claude without it reading the file at all. But this is a preference, not a requirement.
 
 ## Known Limitations
 
@@ -76,12 +65,12 @@ This is a behavioral guardrail, not a technical enforcement mechanism. Be aware 
 After installing, verify it works:
 
 1. Start a new Claude Code session
-2. Type: `Here are my students: John Smith 3.4 GPA, Jane Doe 3.8 GPA`
-3. Claude should refuse to process this and remind you to describe the schema instead
+2. Ask Claude to read a CSV that has columns like `student_name`, `student_id`, `email`
+3. Claude should read only the headers, flag the PII columns, and provide a script to strip them before reading any data rows
 
 ## Contributing
 
-This guardrail can be improved. If you work in higher ed and have ideas for better PII detection patterns, edge cases we missed, or workflows that need coverage, open an issue or submit a PR.
+This guardrail can be improved. If you work in higher ed and have ideas for better PII detection patterns, open an issue or submit a PR.
 
 Areas that could use community input:
 
