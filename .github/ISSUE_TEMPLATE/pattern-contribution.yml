@@ -1,0 +1,55 @@
+name: Pattern Contribution
+description: Suggest a new PII column pattern or report a false positive
+title: "[Pattern] "
+labels: ["pattern"]
+body:
+  - type: dropdown
+    id: type
+    attributes:
+      label: Contribution Type
+      options:
+        - New pattern (column that should be caught)
+        - False positive (column that should NOT be caught)
+    validations:
+      required: true
+  - type: input
+    id: sis
+    attributes:
+      label: Student Information System
+      description: Which SIS exports this column name? (e.g., Banner, PeopleSoft, Slate, Workday, Jenzabar, or N/A)
+      placeholder: Banner
+    validations:
+      required: true
+  - type: input
+    id: column_name
+    attributes:
+      label: Column Name
+      description: The exact column name as it appears in the export
+      placeholder: SPRIDEN_LAST_NAME
+    validations:
+      required: true
+  - type: input
+    id: contains
+    attributes:
+      label: What This Column Contains
+      description: Describe the data (e.g., "Student last name", "Department code"). Do NOT paste actual student data.
+      placeholder: Student last name from Banner
+    validations:
+      required: true
+  - type: dropdown
+    id: action
+    attributes:
+      label: Recommended Action
+      options:
+        - Block (this is direct PII)
+        - Warn (this could contain embedded PII)
+        - Allow (this is not PII, currently causing a false positive)
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any other details that would help evaluate this pattern
+    validations:
+      required: false

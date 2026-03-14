@@ -9,7 +9,7 @@ When Claude Code tries to read a data file (.csv, .xlsx, .tsv), this plugin inte
 1. **Scans column headers** before any data enters the conversation
 2. **Blocks the read** if PII columns are detected (names, IDs, SSNs, emails, phone numbers, addresses)
 3. **Shows you exactly which columns** were flagged and why
-4. **Provides a ready-to-run Python script** to create a clean copy with PII columns removed
+4. **Saves a ready-to-run cleanup script** that creates a clean copy with PII columns removed and a `row_id` column added
 
 No configuration needed. Install the plugin and the protection is active immediately.
 
@@ -60,19 +60,24 @@ Note: Without the plugin install, the skill must be invoked by Claude (or by you
 
 ## Requirements
 
-- Claude Code (Node.js is included, so the hook works with zero additional dependencies for CSV/TSV files)
-- For .xlsx scanning: `npm install xlsx` (optional, only needed if you work with Excel files)
-- For running the provided cleanup scripts: `pip install pandas` (optional, only needed when stripping PII columns)
+- Claude Code (Node.js is included, so the hook and cleanup scripts work with zero additional dependencies for CSV/TSV files)
+- For .xlsx scanning and cleanup: `npm install xlsx` (optional, only needed if you work with Excel files)
 
 ## How It Works
 
 The plugin has two layers of protection:
 
 **Layer 1: Automatic hook (PreToolUse on Read)**
-A Node.js script runs before every file read. It checks the file extension, reads only the column headers (never the data rows), and pattern-matches against known PII column names. If PII is found, the read is blocked before any data reaches the Claude API. Since Claude Code already includes Node.js, this works with zero additional dependencies for CSV and TSV files.
+A Node.js script runs before every file read. It checks the file extension, reads only the column headers (never the data rows), and pattern-matches against known PII column names. If PII is found, the read is blocked before any data reaches the Claude API. Since Claude Code already includes Node.js, this works with zero additional dependencies for CSV and TSV files. For Excel files with multiple sheets, headers from all sheets are scanned. When PII is detected, a Node.js cleanup script is saved to `~/.ferpa-guardrail/cleanup/` that Claude can run for you. The script removes PII columns and adds a sequential `row_id` column to preserve row-level uniqueness.
 
 **Layer 2: Behavioral skill**
 When invoked, the skill provides additional guidance: catching PII pasted directly into the conversation, flagging small-cohort aggregates (n < 10) that could allow re-identification, preventing code that sends data to external APIs, and ensuring synthetic data uses fake identifiers.
+
+## Audit Log
+
+Every scan result is recorded in a local log file at `~/.ferpa-guardrail/audit.log`. Each entry is a JSON line with the timestamp, file name, action taken (allowed or blocked), number of columns scanned, and any flagged columns. The log never contains actual data values.
+
+This log provides auditable evidence for compliance reviews. It is local to your machine and is never transmitted.
 
 ## PII Patterns Detected
 
@@ -114,7 +119,7 @@ After installing, verify it works:
 
 ## Contributing
 
-If you work in higher ed and have ideas for better PII detection patterns, open an issue or submit a PR.
+If you work in higher ed and have ideas for better PII detection patterns, use the **[Pattern Contribution](../../issues/new?template=pattern-contribution.yml)** issue template to submit a new pattern or report a false positive.
 
 Areas that could use community input:
 

@@ -9,6 +9,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 // ---------------------------------------------------------------------------
 // PII pattern definitions
@@ -60,6 +61,175 @@ function allow(additionalContext) {
 function block(message) {
   process.stderr.write(message);
   process.exit(2);
+}
+
+function getFerpaDir() {
+  const dir = path.join(os.homedir(), '.ferpa-guardrail');
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+}
+
+function isFirstBlock() {
+  try {
+    const marker = path.join(getFerpaDir(), '.welcomed');
+    return !fs.existsSync(marker);
+  } catch (_e) {
+    return true; // If we can't check, show the welcome (harmless if repeated)
+  }
+}
+
+function markFirstBlock() {
+  try {
+    const marker = path.join(getFerpaDir(), '.welcomed');
+    fs.writeFileSync(marker, new Date().toISOString());
+  } catch (_e) {
+    // Best effort
+  }
+}
+
+function buildWelcomeMessage() {
+  return [
+    '',
+    '------------------------------------------------------------',
+    '  Welcome! The FERPA Guardrail plugin is protecting your data.',
+    '------------------------------------------------------------',
+    '',
+    'FERPA (Family Educational Rights and Privacy Act) protects student',
+    'education records. When Claude Code reads a file, its contents are',
+    'sent to the Claude API. This plugin scans column headers first and',
+    'blocks the read if student PII is detected.',
+    '',
+    'This is the first time the guardrail has caught something.',
+    'Here is what happened:',
+  ].join('\n');
+}
+
+function appendAuditLog(entry, overrideDir) {
+  try {
+    const dir = overrideDir || getFerpaDir();
+    const logPath = path.join(dir, 'audit.log');
+    const line = JSON.stringify({
+      timestamp: new Date().toISOString(),
+      ...entry,
+    }) + '\n';
+    fs.appendFileSync(logPath, line);
+  } catch (_e) {
+    // Audit logging is best-effort; never disrupt a scan because logging failed
+  }
+}
+
+function writeCleanupScript(filePath, hits, ext, overrideDir) {
+  try {
+    const baseDir = overrideDir || getFerpaDir();
+    const cleanupDir = path.join(baseDir, 'cleanup');
+    if (!fs.existsSync(cleanupDir)) {
+      fs.mkdirSync(cleanupDir, { recursive: true });
+    }
+
+    const baseName = path.basename(filePath, ext);
+    const scriptPath = path.join(cleanupDir, `clean_${baseName}.js`);
+    const fwdInput = filePath.replace(/\\/g, '/');
+    const fwdOutput = fwdInput.replace(/(\.[^.]+)$/, '_cleaned$1');
+    const dropCols = hits.map(h => h.column);
+    const dropJSON = JSON.stringify(dropCols);
+
+    let script;
+    if (ext === '.xlsx') {
+      script = generateXlsxCleanup(fwdInput, fwdOutput, dropJSON);
+    } else {
+      const delim = ext === '.tsv' ? '\\t' : ',';
+      script = generateCsvCleanup(fwdInput, fwdOutput, dropJSON, delim);
+    }
+
+    fs.writeFileSync(scriptPath, script);
+    return scriptPath;
+  } catch (_e) {
+    return null;
+  }
+}
+
+function generateCsvCleanup(inputPath, outputPath, dropJSON, delim) {
+  return `#!/usr/bin/env node
+const fs = require('fs');
+
+const INPUT = ${JSON.stringify(inputPath)};
+const OUTPUT = ${JSON.stringify(outputPath)};
+const DROP = new Set(${dropJSON});
+const DELIM = '${delim}';
+
+function parseLine(line, d) {
+  const fields = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (inQ) {
+      if (c === '"') {
+        if (i + 1 < line.length && line[i + 1] === '"') { cur += '"'; i++; }
+        else inQ = false;
+      } else cur += c;
+    } else {
+      if (c === '"') inQ = true;
+      else if (c === d) { fields.push(cur); cur = ''; }
+      else cur += c;
+    }
+  }
+  fields.push(cur);
+  return fields;
+}
+
+let text = fs.readFileSync(INPUT, 'utf8');
+if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+const lines = text.split(/\\r?\\n/).filter(l => l.trim() !== '');
+if (lines.length === 0) { console.log('File is empty.'); process.exit(0); }
+
+const headers = parseLine(lines[0], DELIM);
+const keepIdx = [];
+for (let i = 0; i < headers.length; i++) {
+  if (!DROP.has(headers[i].trim())) keepIdx.push(i);
+}
+
+const out = [];
+out.push(['row_id', ...keepIdx.map(i => headers[i])].join(DELIM));
+for (let r = 1; r < lines.length; r++) {
+  const fields = parseLine(lines[r], DELIM);
+  out.push([r, ...keepIdx.map(i => fields[i] || '')].join(DELIM));
+}
+
+fs.writeFileSync(OUTPUT, out.join('\\n') + '\\n');
+console.log('Cleaned file written to: ' + OUTPUT);
+console.log('Dropped ' + DROP.size + ' PII column(s), added row_id. ' + (lines.length - 1) + ' data rows.');
+`;
+}
+
+function generateXlsxCleanup(inputPath, outputPath, dropJSON) {
+  return `#!/usr/bin/env node
+const XLSX = require('xlsx');
+
+const INPUT = ${JSON.stringify(inputPath)};
+const OUTPUT = ${JSON.stringify(outputPath)};
+const DROP = new Set(${dropJSON});
+
+const wb = XLSX.readFile(INPUT);
+for (const name of wb.SheetNames) {
+  const data = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: '' });
+  if (data.length === 0) continue;
+  const headers = data[0].map(String);
+  const keepIdx = [];
+  for (let i = 0; i < headers.length; i++) {
+    if (!DROP.has(headers[i].trim())) keepIdx.push(i);
+  }
+  const newData = [['row_id', ...keepIdx.map(i => headers[i])]];
+  for (let r = 1; r < data.length; r++) {
+    newData.push([r, ...keepIdx.map(i => data[r][i] !== undefined ? data[r][i] : '')]);
+  }
+  wb.Sheets[name] = XLSX.utils.aoa_to_sheet(newData);
+}
+XLSX.writeFile(wb, OUTPUT);
+console.log('Cleaned file written to: ' + OUTPUT);
+console.log('Dropped ' + DROP.size + ' PII column(s) from ' + wb.SheetNames.length + ' sheet(s), added row_id.');
+`;
 }
 
 function parseHeaderLine(line, delimiter) {
@@ -141,14 +311,19 @@ function getHeadersFromXlsx(filePath) {
   }
 
   const workbook = XLSX.readFile(filePath, { sheetRows: 1 });
-  const sheetName = workbook.SheetNames[0];
-  if (!sheetName) return [];
+  if (workbook.SheetNames.length === 0) return [];
 
-  const sheet = workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-  if (rows.length === 0) return [];
-
-  return rows[0].map(String);
+  const allHeaders = new Set();
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+    if (rows.length > 0) {
+      for (const col of rows[0]) {
+        allHeaders.add(String(col));
+      }
+    }
+  }
+  return [...allHeaders];
 }
 
 function scanHeaders(headers) {
@@ -166,39 +341,14 @@ function scanHeaders(headers) {
   return hits;
 }
 
-function buildBlockMessage(filePath, hits, ext) {
+function buildBlockMessage(filePath, hits, ext, cleanupScriptPath) {
   const fwdPath = filePath.replace(/\\/g, '/');
-  const cleanedPath = fwdPath.replace(/(\.[^.]+)$/, '_cleaned$1');
 
   const flaggedLines = hits
     .map((h) => `  - ${h.column}  (${h.category})`)
     .join('\n');
 
-  const colsPy = hits.map((h) => `'${h.column}'`).join(', ');
-
-  let readCmd, writeCmd;
-  if (ext === '.xlsx') {
-    readCmd = 'df = pd.read_excel(input_file, engine="openpyxl")';
-    writeCmd = 'df.to_excel(output_file, index=False, engine="openpyxl")';
-  } else if (ext === '.tsv') {
-    readCmd = 'df = pd.read_csv(input_file, sep="\\t")';
-    writeCmd = 'df.to_csv(output_file, index=False, sep="\\t")';
-  } else {
-    readCmd = 'df = pd.read_csv(input_file)';
-    writeCmd = 'df.to_csv(output_file, index=False)';
-  }
-
-  const remediation = [
-    'import pandas as pd',
-    '',
-    `df = pd.read_csv(r"${fwdPath}")` .replace(/^.*$/, readCmd.replace('input_file', `r"${fwdPath}"`)),
-    `drop_cols = [${colsPy}]`,
-    'df.drop(columns=[c for c in drop_cols if c in df.columns], inplace=True)',
-    writeCmd.replace('output_file', `r"${cleanedPath}"`),
-    `print("Cleaned file written to: ${cleanedPath}")`,
-  ].join('\n');
-
-  return [
+  const lines = [
     '',
     '============================================================',
     '  FERPA GUARDRAIL: Blocked read of data file with student PII',
@@ -216,16 +366,34 @@ function buildBlockMessage(filePath, hits, ext) {
     'violate FERPA (20 U.S.C. 1232g) and your institution\'s data',
     'governance policies.',
     '',
-    'To proceed safely, run the following Python script to create',
-    'a copy of the file with the PII columns removed:',
+    'To proceed safely, create a cleaned copy with PII columns',
+    'removed and a row_id column added for row-level uniqueness.',
     '',
-    '----------- cut here -----------',
-    remediation,
-    '----------- cut here -----------',
+  ];
+
+  if (cleanupScriptPath) {
+    const fwdScript = cleanupScriptPath.replace(/\\/g, '/');
+    lines.push(
+      'A cleanup script has been saved. To run it:',
+      '',
+      `  node "${fwdScript}"`,
+      '',
+    );
+  }
+
+  lines.push(
+    'Or clean the file manually in Excel:',
     '',
-    'Then ask Claude to read the cleaned file instead.',
+    '  1. Open the file in Excel',
+    '  2. Right-click the column header for each flagged column above',
+    '  3. Select "Delete"',
+    '  4. Insert a new column A, name it "row_id", and number rows 1, 2, 3...',
+    '  5. File > Save As with "_cleaned" added to the filename',
+    '  6. Ask Claude to read the cleaned file',
     '',
-  ].join('\n');
+  );
+
+  return lines.join('\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -305,6 +473,11 @@ function main() {
   const hits = scanHeaders(headers);
 
   if (hits.length === 0) {
+    appendAuditLog({
+      file: path.basename(filePath),
+      action: 'allowed',
+      columnsScanned: headers.length,
+    });
     allow(
       `FERPA hook: scanned ${headers.length} columns in ` +
       `${path.basename(filePath)}, no PII detected.`
@@ -312,7 +485,36 @@ function main() {
     return;
   }
 
-  block(buildBlockMessage(filePath, hits, ext));
+  appendAuditLog({
+    file: path.basename(filePath),
+    action: 'blocked',
+    columnsScanned: headers.length,
+    flaggedColumns: hits.map(h => h.column),
+    categories: [...new Set(hits.map(h => h.category))],
+  });
+
+  const cleanupScriptPath = writeCleanupScript(filePath, hits, ext);
+  const blockMsg = buildBlockMessage(filePath, hits, ext, cleanupScriptPath);
+
+  if (isFirstBlock()) {
+    markFirstBlock();
+    block(buildWelcomeMessage() + blockMsg);
+  } else {
+    block(blockMsg);
+  }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  normalise,
+  scanHeaders,
+  buildBlockMessage,
+  buildWelcomeMessage,
+  writeCleanupScript,
+  appendAuditLog,
+  PII_PATTERNS,
+  COMPILED_PATTERNS,
+};
