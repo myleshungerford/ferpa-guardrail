@@ -106,6 +106,20 @@ function buildWelcomeMessage() {
   ].join('\n');
 }
 
+function appendAuditLog(entry, overrideDir) {
+  try {
+    const dir = overrideDir || getFerpaDir();
+    const logPath = path.join(dir, 'audit.log');
+    const line = JSON.stringify({
+      timestamp: new Date().toISOString(),
+      ...entry,
+    }) + '\n';
+    fs.appendFileSync(logPath, line);
+  } catch (_e) {
+    // Audit logging is best-effort; never disrupt a scan because logging failed
+  }
+}
+
 function writeCleanupScript(filePath, hits, ext, overrideDir) {
   try {
     const baseDir = overrideDir || getFerpaDir();
@@ -459,12 +473,25 @@ function main() {
   const hits = scanHeaders(headers);
 
   if (hits.length === 0) {
+    appendAuditLog({
+      file: path.basename(filePath),
+      action: 'allowed',
+      columnsScanned: headers.length,
+    });
     allow(
       `FERPA hook: scanned ${headers.length} columns in ` +
       `${path.basename(filePath)}, no PII detected.`
     );
     return;
   }
+
+  appendAuditLog({
+    file: path.basename(filePath),
+    action: 'blocked',
+    columnsScanned: headers.length,
+    flaggedColumns: hits.map(h => h.column),
+    categories: [...new Set(hits.map(h => h.category))],
+  });
 
   const cleanupScriptPath = writeCleanupScript(filePath, hits, ext);
   const blockMsg = buildBlockMessage(filePath, hits, ext, cleanupScriptPath);
@@ -487,6 +514,7 @@ module.exports = {
   buildBlockMessage,
   buildWelcomeMessage,
   writeCleanupScript,
+  appendAuditLog,
   PII_PATTERNS,
   COMPILED_PATTERNS,
 };

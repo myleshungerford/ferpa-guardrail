@@ -3,7 +3,7 @@ const assert = require('node:assert');
 const fs_test = require('fs');
 const path_test = require('path');
 const os_test = require('os');
-const { normalise, scanHeaders, buildBlockMessage, buildWelcomeMessage, writeCleanupScript } = require('../scripts/check-ferpa-pii.js');
+const { normalise, scanHeaders, buildBlockMessage, buildWelcomeMessage, writeCleanupScript, appendAuditLog } = require('../scripts/check-ferpa-pii.js');
 
 describe('normalise', () => {
   it('lowercases and replaces spaces/hyphens with underscores', () => {
@@ -87,5 +87,20 @@ describe('buildWelcomeMessage', () => {
     assert.ok(msg.includes('Welcome'), 'Should include Welcome');
     assert.ok(msg.includes('FERPA'), 'Should mention FERPA');
     assert.ok(msg.includes('first time'), 'Should mention first time');
+  });
+});
+
+describe('appendAuditLog', () => {
+  it('appends a JSON line to an audit log file', () => {
+    const tmpDir = fs_test.mkdtempSync(path_test.join(os_test.tmpdir(), 'ferpa-test-'));
+    appendAuditLog({ file: 'test.csv', action: 'blocked', columnsScanned: 5 }, tmpDir);
+    const logPath = path_test.join(tmpDir, 'audit.log');
+    const content = fs_test.readFileSync(logPath, 'utf8');
+    const entry = JSON.parse(content.trim());
+    assert.strictEqual(entry.file, 'test.csv');
+    assert.strictEqual(entry.action, 'blocked');
+    assert.ok(entry.timestamp, 'Should have a timestamp');
+    // Cleanup
+    fs_test.rmSync(tmpDir, { recursive: true });
   });
 });
