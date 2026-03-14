@@ -315,4 +315,14 @@ function main() {
   block(buildBlockMessage(filePath, hits, ext));
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  normalise,
+  scanHeaders,
+  buildBlockMessage,
+  PII_PATTERNS,
+  COMPILED_PATTERNS,
+};
