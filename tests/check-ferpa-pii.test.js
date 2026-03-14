@@ -1,6 +1,9 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { normalise, scanHeaders, buildBlockMessage } = require('../scripts/check-ferpa-pii.js');
+const fs_test = require('fs');
+const path_test = require('path');
+const os_test = require('os');
+const { normalise, scanHeaders, buildBlockMessage, writeCleanupScript } = require('../scripts/check-ferpa-pii.js');
 
 describe('normalise', () => {
   it('lowercases and replaces spaces/hyphens with underscores', () => {
@@ -48,10 +51,32 @@ describe('multi-sheet scanning', () => {
 });
 
 describe('buildBlockMessage', () => {
-  it('includes flagged columns and FERPA reference', () => {
+  it('includes the cleanup script run command when path is provided', () => {
     const hits = [{ column: 'student_name', category: 'Student Name' }];
-    const msg = buildBlockMessage('/tmp/test.csv', hits, '.csv');
-    assert.ok(msg.includes('student_name'));
-    assert.ok(msg.includes('FERPA'));
+    const msg = buildBlockMessage('/tmp/test.csv', hits, '.csv', '/tmp/cleanup.js');
+    assert.ok(msg.includes('node'), 'Should include node command');
+    assert.ok(msg.includes('cleanup.js'), 'Should reference the cleanup script');
+  });
+
+  it('includes manual Excel instructions', () => {
+    const hits = [{ column: 'student_name', category: 'Student Name' }];
+    const msg = buildBlockMessage('/tmp/test.csv', hits, '.csv', null);
+    assert.ok(msg.includes('Right-click'), 'Should include Excel instructions');
+    assert.ok(msg.includes('row_id'), 'Should mention row_id in Excel instructions');
+  });
+});
+
+describe('writeCleanupScript', () => {
+  it('writes a runnable Node.js cleanup script for CSV', () => {
+    const tmpDir = fs_test.mkdtempSync(path_test.join(os_test.tmpdir(), 'ferpa-test-'));
+    const hits = [{ column: 'student_name', category: 'Student Name' }];
+    const scriptPath = writeCleanupScript('/tmp/test.csv', hits, '.csv', tmpDir);
+    assert.ok(scriptPath, 'Should return a script path');
+    const content = fs_test.readFileSync(scriptPath, 'utf8');
+    assert.ok(content.includes('student_name'), 'Script should reference the PII column');
+    assert.ok(content.includes('row_id'), 'Script should add row_id');
+    assert.ok(content.includes('#!/usr/bin/env node'), 'Script should have shebang');
+    // Cleanup
+    fs_test.rmSync(tmpDir, { recursive: true });
   });
 });
