@@ -60,17 +60,16 @@ Note: Without the plugin install, the skill must be invoked by Claude (or by you
 
 ## Requirements
 
-- Claude Code
-- Python 3.8+
-- For .xlsx scanning: `pip install openpyxl` (CSV/TSV scanning works without any extra packages)
-- For running the provided cleanup scripts: `pip install pandas` (and `openpyxl` for Excel files)
+- Claude Code (Node.js is included, so the hook works with zero additional dependencies for CSV/TSV files)
+- For .xlsx scanning: `npm install xlsx` (optional, only needed if you work with Excel files)
+- For running the provided cleanup scripts: `pip install pandas` (optional, only needed when stripping PII columns)
 
 ## How It Works
 
 The plugin has two layers of protection:
 
 **Layer 1: Automatic hook (PreToolUse on Read)**
-A Python script runs before every file read. It checks the file extension, reads only the column headers (never the data rows), and pattern-matches against known PII column names. If PII is found, the read is blocked before any data reaches the Claude API.
+A Node.js script runs before every file read. It checks the file extension, reads only the column headers (never the data rows), and pattern-matches against known PII column names. If PII is found, the read is blocked before any data reaches the Claude API. Since Claude Code already includes Node.js, this works with zero additional dependencies for CSV and TSV files.
 
 **Layer 2: Behavioral skill**
 When invoked, the skill provides additional guidance: catching PII pasted directly into the conversation, flagging small-cohort aggregates (n < 10) that could allow re-identification, preventing code that sends data to external APIs, and ensuring synthetic data uses fake identifiers.
@@ -99,7 +98,7 @@ Column matching is case-insensitive and handles variations in spacing, hyphens, 
 - **Free-text blind spot.** A "comments" or "notes" column could contain embedded PII that the column-name scan will not detect.
 - **Small-n risk.** Aggregate statistics for small cohorts (fewer than 10 students) may allow re-identification.
 - **Not a substitute for an institutional data processing agreement** with Anthropic or any AI provider.
-- **Excel scanning requires openpyxl.** Without it, .xlsx files are allowed through with a warning.
+- **Excel scanning requires the xlsx npm package.** Without it, .xlsx files are allowed through with a warning. Install with `npm install xlsx`.
 - **Legacy .xls not supported.** The hook scans .xlsx files only. If you have .xls files (Excel 97-2003 format), convert them to .xlsx first.
 
 ## Quick Test

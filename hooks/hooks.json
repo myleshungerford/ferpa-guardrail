@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/run-hook.sh\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/check-ferpa-pii.js\"",
             "timeout": 30,
             "statusMessage": "FERPA: Scanning for student PII..."
           }
