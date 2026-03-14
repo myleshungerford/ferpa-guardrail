@@ -3,7 +3,7 @@ const assert = require('node:assert');
 const fs_test = require('fs');
 const path_test = require('path');
 const os_test = require('os');
-const { normalise, scanHeaders, buildBlockMessage, writeCleanupScript } = require('../scripts/check-ferpa-pii.js');
+const { normalise, scanHeaders, buildBlockMessage, buildWelcomeMessage, writeCleanupScript } = require('../scripts/check-ferpa-pii.js');
 
 describe('normalise', () => {
   it('lowercases and replaces spaces/hyphens with underscores', () => {
@@ -78,5 +78,14 @@ describe('writeCleanupScript', () => {
     assert.ok(content.includes('#!/usr/bin/env node'), 'Script should have shebang');
     // Cleanup
     fs_test.rmSync(tmpDir, { recursive: true });
+  });
+});
+
+describe('buildWelcomeMessage', () => {
+  it('returns a welcome string mentioning FERPA', () => {
+    const msg = buildWelcomeMessage();
+    assert.ok(msg.includes('Welcome'), 'Should include Welcome');
+    assert.ok(msg.includes('FERPA'), 'Should mention FERPA');
+    assert.ok(msg.includes('first time'), 'Should mention first time');
   });
 });

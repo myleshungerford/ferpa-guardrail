@@ -71,6 +71,41 @@ function getFerpaDir() {
   return dir;
 }
 
+function isFirstBlock() {
+  try {
+    const marker = path.join(getFerpaDir(), '.welcomed');
+    return !fs.existsSync(marker);
+  } catch (_e) {
+    return true; // If we can't check, show the welcome (harmless if repeated)
+  }
+}
+
+function markFirstBlock() {
+  try {
+    const marker = path.join(getFerpaDir(), '.welcomed');
+    fs.writeFileSync(marker, new Date().toISOString());
+  } catch (_e) {
+    // Best effort
+  }
+}
+
+function buildWelcomeMessage() {
+  return [
+    '',
+    '------------------------------------------------------------',
+    '  Welcome! The FERPA Guardrail plugin is protecting your data.',
+    '------------------------------------------------------------',
+    '',
+    'FERPA (Family Educational Rights and Privacy Act) protects student',
+    'education records. When Claude Code reads a file, its contents are',
+    'sent to the Claude API. This plugin scans column headers first and',
+    'blocks the read if student PII is detected.',
+    '',
+    'This is the first time the guardrail has caught something.',
+    'Here is what happened:',
+  ].join('\n');
+}
+
 function writeCleanupScript(filePath, hits, ext, overrideDir) {
   try {
     const baseDir = overrideDir || getFerpaDir();
@@ -432,7 +467,14 @@ function main() {
   }
 
   const cleanupScriptPath = writeCleanupScript(filePath, hits, ext);
-  block(buildBlockMessage(filePath, hits, ext, cleanupScriptPath));
+  const blockMsg = buildBlockMessage(filePath, hits, ext, cleanupScriptPath);
+
+  if (isFirstBlock()) {
+    markFirstBlock();
+    block(buildWelcomeMessage() + blockMsg);
+  } else {
+    block(blockMsg);
+  }
 }
 
 if (require.main === module) {
@@ -443,6 +485,7 @@ module.exports = {
   normalise,
   scanHeaders,
   buildBlockMessage,
+  buildWelcomeMessage,
   writeCleanupScript,
   PII_PATTERNS,
   COMPILED_PATTERNS,
