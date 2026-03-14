@@ -1,0 +1,17 @@
+{
+  "name": "ferpa-guardrail",
+  "description": "FERPA compliance tools for Claude Code in higher education.",
+  "owner": {
+    "name": "Myles Hungerford",
+    "email": "myles@american.edu"
+  },
+  "plugins": [
+    {
+      "name": "ferpa-guardrail",
+      "source": "./",
+      "description": "Automatic FERPA PII detection guardrail for higher education. Scans data file headers before Claude reads them and blocks access when student personally identifiable information is detected.",
+      "category": "security",
+      "keywords": ["ferpa", "pii", "privacy", "higher-education", "data-protection", "guardrail"]
+    }
+  ]
+}
