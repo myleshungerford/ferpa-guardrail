@@ -141,14 +141,19 @@ function getHeadersFromXlsx(filePath) {
   }
 
   const workbook = XLSX.readFile(filePath, { sheetRows: 1 });
-  const sheetName = workbook.SheetNames[0];
-  if (!sheetName) return [];
+  if (workbook.SheetNames.length === 0) return [];
 
-  const sheet = workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-  if (rows.length === 0) return [];
-
-  return rows[0].map(String);
+  const allHeaders = new Set();
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+    if (rows.length > 0) {
+      for (const col of rows[0]) {
+        allHeaders.add(String(col));
+      }
+    }
+  }
+  return [...allHeaders];
 }
 
 function scanHeaders(headers) {
