@@ -61,7 +61,7 @@ Note: Without the plugin install, the skill must be invoked by Claude (or by you
 ## Requirements
 
 - Claude Code (Node.js is included, so the hook and cleanup scripts work with zero additional dependencies for CSV/TSV files)
-- For .xlsx scanning and cleanup: `npm install xlsx` (optional, only needed if you work with Excel files)
+- For .xlsx scanning and cleanup: `npm install exceljs` (optional, only needed if you work with Excel files)
 
 ## How It Works
 
@@ -103,7 +103,7 @@ Column matching is case-insensitive and handles variations in spacing, hyphens, 
 - **Free-text blind spot.** A "comments" or "notes" column could contain embedded PII that the column-name scan will not detect.
 - **Small-n risk.** Aggregate statistics for small cohorts (fewer than 10 students) may allow re-identification.
 - **Not a substitute for an institutional data processing agreement** with Anthropic or any AI provider.
-- **Excel scanning requires the xlsx npm package.** Without it, .xlsx files are allowed through with a warning. Install with `npm install xlsx`.
+- **Excel scanning requires the exceljs npm package.** Without it, .xlsx files are allowed through with a warning. Install with `npm install exceljs`.
 - **Legacy .xls not supported.** The hook scans .xlsx files only. If you have .xls files (Excel 97-2003 format), convert them to .xlsx first.
 
 ## Quick Test

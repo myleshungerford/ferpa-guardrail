@@ -4,7 +4,7 @@
  *
  * Intercepts file read operations and blocks them if column headers
  * contain FERPA-protected student PII. Zero-dependency for CSV/TSV
- * files; requires the 'xlsx' npm package for Excel.
+ * files; requires the 'exceljs' npm package for Excel.
  */
 
 const fs = require('fs');
@@ -205,30 +205,40 @@ console.log('Dropped ' + DROP.size + ' PII column(s), added row_id. ' + (lines.l
 
 function generateXlsxCleanup(inputPath, outputPath, dropJSON) {
   return `#!/usr/bin/env node
-const XLSX = require('xlsx');
+const ExcelJS = require('exceljs');
 
 const INPUT = ${JSON.stringify(inputPath)};
 const OUTPUT = ${JSON.stringify(outputPath)};
 const DROP = new Set(${dropJSON});
 
-const wb = XLSX.readFile(INPUT);
-for (const name of wb.SheetNames) {
-  const data = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: '' });
-  if (data.length === 0) continue;
-  const headers = data[0].map(String);
-  const keepIdx = [];
-  for (let i = 0; i < headers.length; i++) {
-    if (!DROP.has(headers[i].trim())) keepIdx.push(i);
+async function main() {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(INPUT);
+  const sheetCount = wb.worksheets.length;
+  for (const ws of wb.worksheets) {
+    const headerRow = ws.getRow(1);
+    if (!headerRow || headerRow.cellCount === 0) continue;
+    const headers = [];
+    headerRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      headers[colNumber] = String(cell.value || '');
+    });
+    const dropCols = new Set();
+    for (let c = 1; c <= headers.length; c++) {
+      if (headers[c] && DROP.has(headers[c].trim())) dropCols.add(c);
+    }
+    // Remove PII columns from right to left to preserve indices
+    const sorted = [...dropCols].sort((a, b) => b - a);
+    for (const col of sorted) {
+      ws.spliceColumns(col, 1);
+    }
+    // Insert row_id column at position 1
+    ws.spliceColumns(1, 0, ['row_id', ...Array.from({ length: ws.rowCount - 1 }, (_, i) => i + 1)]);
   }
-  const newData = [['row_id', ...keepIdx.map(i => headers[i])]];
-  for (let r = 1; r < data.length; r++) {
-    newData.push([r, ...keepIdx.map(i => data[r][i] !== undefined ? data[r][i] : '')]);
-  }
-  wb.Sheets[name] = XLSX.utils.aoa_to_sheet(newData);
+  await wb.xlsx.writeFile(OUTPUT);
+  console.log('Cleaned file written to: ' + OUTPUT);
+  console.log('Dropped ' + DROP.size + ' PII column(s) from ' + sheetCount + ' sheet(s), added row_id.');
 }
-XLSX.writeFile(wb, OUTPUT);
-console.log('Cleaned file written to: ' + OUTPUT);
-console.log('Dropped ' + DROP.size + ' PII column(s) from ' + wb.SheetNames.length + ' sheet(s), added row_id.');
+main().catch(err => { console.error(err.message); process.exit(1); });
 `;
 }
 
@@ -302,25 +312,26 @@ function getHeadersFromDelimited(filePath, ext) {
   return parseHeaderLine(line, delimiter);
 }
 
-function getHeadersFromXlsx(filePath) {
-  let XLSX;
+async function getHeadersFromXlsx(filePath) {
+  let ExcelJS;
   try {
-    XLSX = require('xlsx');
+    ExcelJS = require('exceljs');
   } catch (_e) {
     return null;
   }
 
-  const workbook = XLSX.readFile(filePath, { sheetRows: 1 });
-  if (workbook.SheetNames.length === 0) return [];
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filePath);
+  if (workbook.worksheets.length === 0) return [];
 
   const allHeaders = new Set();
-  for (const sheetName of workbook.SheetNames) {
-    const sheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-    if (rows.length > 0) {
-      for (const col of rows[0]) {
-        allHeaders.add(String(col));
-      }
+  for (const worksheet of workbook.worksheets) {
+    const headerRow = worksheet.getRow(1);
+    if (headerRow) {
+      headerRow.eachCell({ includeEmpty: true }, (cell) => {
+        const val = String(cell.value || '');
+        if (val) allHeaders.add(val);
+      });
     }
   }
   return [...allHeaders];
@@ -400,7 +411,7 @@ function buildBlockMessage(filePath, hits, ext, cleanupScriptPath) {
 // Main
 // ---------------------------------------------------------------------------
 
-function main() {
+async function main() {
   let inputData;
   try {
     inputData = fs.readFileSync(0, 'utf8');
@@ -448,11 +459,11 @@ function main() {
     if (ext === '.csv' || ext === '.tsv') {
       headers = getHeadersFromDelimited(filePath, ext);
     } else if (ext === '.xlsx') {
-      headers = getHeadersFromXlsx(filePath);
+      headers = await getHeadersFromXlsx(filePath);
       if (headers === null) {
         allow(
-          'FERPA hook: xlsx npm package is not installed. Excel files cannot be scanned for PII. ' +
-          'Run "npm install xlsx" to enable FERPA scanning for .xlsx files.'
+          'FERPA hook: exceljs npm package is not installed. Excel files cannot be scanned for PII. ' +
+          'Run "npm install exceljs" to enable FERPA scanning for .xlsx files.'
         );
         return;
       }
@@ -505,7 +516,18 @@ function main() {
 }
 
 if (require.main === module) {
-  main();
+  main().catch((err) => {
+    // If main itself throws, fail open so we don't block normal work
+    const payload = {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'allow',
+        additionalContext: `FERPA hook: unexpected error (${err.message}). PII scanning was NOT performed.`,
+      },
+    };
+    process.stdout.write(JSON.stringify(payload));
+    process.exit(0);
+  });
 }
 
 module.exports = {
