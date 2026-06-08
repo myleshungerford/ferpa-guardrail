@@ -3,7 +3,7 @@ const assert = require('node:assert');
 const fs_test = require('fs');
 const path_test = require('path');
 const os_test = require('os');
-const { normalise, scanHeaders, buildBlockMessage, buildWelcomeMessage, writeCleanupScript, appendAuditLog } = require('../scripts/check-ferpa-pii.js');
+const { normalise, scanHeaders, buildBlockMessage, buildScanFailureMessage, buildWelcomeMessage, writeCleanupScript, appendAuditLog } = require('../scripts/check-ferpa-pii.js');
 
 describe('normalise', () => {
   it('lowercases and replaces spaces/hyphens with underscores', () => {
@@ -102,5 +102,20 @@ describe('appendAuditLog', () => {
     assert.ok(entry.timestamp, 'Should have a timestamp');
     // Cleanup
     fs_test.rmSync(tmpDir, { recursive: true });
+  });
+});
+
+describe('buildScanFailureMessage', () => {
+  it('names the file and routes to CSV conversion', () => {
+    const msg = buildScanFailureMessage('/tmp/roster.xls', 'unsupported-format');
+    assert.ok(msg.includes('roster.xls'), 'Should name the file');
+    assert.ok(/convert it to CSV/i.test(msg), 'Should propose converting to CSV');
+  });
+
+  it('handles parser-missing and parse-error reasons', () => {
+    assert.ok(/CSV/i.test(buildScanFailureMessage('/tmp/a.xlsx', 'parser-missing')));
+    const pe = buildScanFailureMessage('/tmp/a.xlsx', 'parse-error', 'boom');
+    assert.ok(/corrupt/i.test(pe), 'Should explain a parse error');
+    assert.ok(pe.includes('boom'), 'Should include the error detail');
   });
 });

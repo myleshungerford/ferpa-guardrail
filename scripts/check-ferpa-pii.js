@@ -34,7 +34,10 @@ const COMPILED_PATTERNS = PII_PATTERNS.map(([category, src]) => [
   new RegExp(src, 'i'),
 ]);
 
-const DATA_EXTENSIONS = new Set(['.csv', '.tsv', '.xlsx']);
+const DATA_EXTENSIONS = new Set(['.csv', '.tsv', '.xlsx', '.xls', '.xlsm', '.xlsb']);
+// Recognized as data, but we cannot parse them (legacy binary, macro-enabled,
+// binary workbook). We fail closed on these and route to CSV conversion.
+const UNSCANNABLE_SPREADSHEET = new Set(['.xls', '.xlsm', '.xlsb']);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -407,6 +410,42 @@ function buildBlockMessage(filePath, hits, ext, cleanupScriptPath) {
   return lines.join('\n');
 }
 
+function buildScanFailureMessage(filePath, reason, detail) {
+  const fwdPath = filePath.replace(/\\/g, '/');
+  const why = {
+    'unsupported-format': 'This is a spreadsheet format the guardrail cannot read (.xls / .xlsm / .xlsb).',
+    'parser-missing': 'The Excel parser is unavailable, so this file cannot be scanned.',
+    'parse-error': `This file could not be read for scanning${detail ? ` (${detail})` : ''}. It may be corrupt, password-protected, or an unexpected variant.`,
+  }[reason] || 'This file could not be scanned for PII.';
+
+  return [
+    '',
+    '============================================================',
+    '  FERPA GUARDRAIL: Read held (file could not be scanned)',
+    '============================================================',
+    '',
+    `File: ${fwdPath}`,
+    '',
+    why,
+    '',
+    'Because the guardrail could not verify this file is free of student PII,',
+    'the read is held rather than silently allowed.',
+    '',
+    'To proceed: convert it to CSV and read the CSV instead. CSV can be scanned,',
+    'and the conversion drops hidden Excel content (cell comments, hidden sheets,',
+    'pivot caches, document metadata).',
+    '',
+    '  Claude can do this locally with Python, for example:',
+    '    import pandas as pd',
+    '    for name, df in pd.read_excel("<file>", sheet_name=None).items():',
+    '        df.to_csv(f"<file>.{name}.csv", index=False)',
+    '  (legacy .xls/.xlsb may need an extra engine: xlrd or pyxlsb)',
+    '',
+    'Then read the resulting CSV file(s); the guardrail will scan them.',
+    '',
+  ].join('\n');
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -454,6 +493,13 @@ async function main() {
     return;
   }
 
+  // Recognized spreadsheet formats we cannot parse: fail closed, with a route forward.
+  if (UNSCANNABLE_SPREADSHEET.has(ext)) {
+    appendAuditLog({ file: path.basename(filePath), action: 'blocked', reason: 'unsupported-format', ext });
+    block(buildScanFailureMessage(filePath, 'unsupported-format'));
+    return;
+  }
+
   let headers;
   try {
     if (ext === '.csv' || ext === '.tsv') {
@@ -461,23 +507,22 @@ async function main() {
     } else if (ext === '.xlsx') {
       headers = await getHeadersFromXlsx(filePath);
       if (headers === null) {
-        allow(
-          'FERPA hook: exceljs npm package is not installed. Excel files cannot be scanned for PII. ' +
-          'Run "npm install exceljs" to enable FERPA scanning for .xlsx files.'
-        );
+        // Parser unavailable: we cannot verify a recognized data file. Fail closed.
+        appendAuditLog({ file: path.basename(filePath), action: 'blocked', reason: 'parser-missing', ext });
+        block(buildScanFailureMessage(filePath, 'parser-missing'));
         return;
       }
     }
   } catch (err) {
-    allow(
-      `FERPA hook: could not read headers from ${path.basename(filePath)} ` +
-      `(${err.message}). PII scanning was not performed.`
-    );
+    // Could not read a recognized data file (corrupt, protected, unexpected). Fail closed.
+    appendAuditLog({ file: path.basename(filePath), action: 'blocked', reason: 'parse-error', ext });
+    block(buildScanFailureMessage(filePath, 'parse-error', err.message));
     return;
   }
 
   if (!headers || headers.length === 0) {
-    allow(`FERPA hook: no headers found in ${path.basename(filePath)}; allowing.`);
+    // Scan ran but found no headers (likely empty or non-tabular); nothing to evaluate.
+    allow(`FERPA hook: no column headers found in ${path.basename(filePath)}; scan ran but had nothing to evaluate. Read allowed.`);
     return;
   }
 
@@ -534,6 +579,7 @@ module.exports = {
   normalise,
   scanHeaders,
   buildBlockMessage,
+  buildScanFailureMessage,
   buildWelcomeMessage,
   writeCleanupScript,
   appendAuditLog,
