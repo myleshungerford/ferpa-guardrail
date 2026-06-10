@@ -2,6 +2,12 @@
 
 Notable changes to the FERPA Guardrail plugin. Versions refer to the `version` field in `.claude-plugin/plugin.json`.
 
+## 1.2.0 (2026-06-10)
+
+### Added
+- Advisory coverage for shell commands. The file-read hook never sees files opened through Bash or PowerShell (pandas, Get-Content, and similar), which was the one unguarded path for student data to enter a conversation. When a shell command references a data file, the guardrail now reminds Claude, in context, not to print identifiable rows and to work with column names, counts, and aggregates instead. The reminder does not block the command, so local scripts that process student data without printing it keep working.
+- Advisory events are recorded in the audit log alongside scan decisions.
+
 ## 1.1.2 (2026-06-10)
 
 ### Fixed

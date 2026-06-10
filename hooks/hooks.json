@@ -11,6 +11,17 @@
             "statusMessage": "FERPA: Scanning for student PII..."
           }
         ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/check-ferpa-pii.js\"",
+            "timeout": 30,
+            "statusMessage": "FERPA: Checking command for data file references..."
+          }
+        ]
       }
     ]
   }

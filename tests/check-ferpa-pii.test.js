@@ -3,7 +3,7 @@ const assert = require('node:assert');
 const fs_test = require('fs');
 const path_test = require('path');
 const os_test = require('os');
-const { normalise, scanHeaders, buildBlockMessage, buildScanFailureMessage, buildWelcomeMessage, writeCleanupScript, appendAuditLog } = require('../scripts/check-ferpa-pii.js');
+const { normalise, scanHeaders, buildBlockMessage, buildScanFailureMessage, buildWelcomeMessage, writeCleanupScript, appendAuditLog, detectDataFileReferences, buildShellAdvisory } = require('../scripts/check-ferpa-pii.js');
 
 describe('normalise', () => {
   it('lowercases and replaces spaces/hyphens with underscores', () => {
@@ -116,6 +116,44 @@ describe('appendAuditLog', () => {
     assert.ok(entry.timestamp, 'Should have a timestamp');
     // Cleanup
     fs_test.rmSync(tmpDir, { recursive: true });
+  });
+});
+
+describe('detectDataFileReferences', () => {
+  it('finds data file tokens in a shell command', () => {
+    const tokens = detectDataFileReferences('python clean.py data/roster.csv --out data/roster_clean.csv');
+    assert.strictEqual(tokens.length, 2);
+    assert.ok(tokens[0].endsWith('roster.csv'));
+  });
+
+  it('finds Excel files in quoted Windows paths', () => {
+    const tokens = detectDataFileReferences('Get-Content "C:\\exports\\Fall 2025\\enrollment.xlsx"');
+    assert.strictEqual(tokens.length, 1);
+    assert.ok(tokens[0].endsWith('enrollment.xlsx'));
+  });
+
+  it('returns an empty array when no data files are referenced', () => {
+    assert.deepStrictEqual(detectDataFileReferences('npm test'), []);
+    assert.deepStrictEqual(detectDataFileReferences(''), []);
+    assert.deepStrictEqual(detectDataFileReferences(undefined), []);
+  });
+
+  it('deduplicates repeated references to the same file', () => {
+    const tokens = detectDataFileReferences('head data.csv; wc -l data.csv');
+    assert.strictEqual(tokens.length, 1);
+  });
+
+  it('does not match non-data extensions', () => {
+    assert.deepStrictEqual(detectDataFileReferences('node script.js report.pdf notes.md'), []);
+  });
+});
+
+describe('buildShellAdvisory', () => {
+  it('names the referenced files and warns against printing rows', () => {
+    const msg = buildShellAdvisory(['data/roster.csv']);
+    assert.ok(msg.includes('FERPA'), 'Should identify itself as the FERPA guardrail');
+    assert.ok(msg.includes('roster.csv'), 'Should name the referenced file');
+    assert.ok(/aggregates/i.test(msg), 'Should steer toward aggregate output');
   });
 });
 

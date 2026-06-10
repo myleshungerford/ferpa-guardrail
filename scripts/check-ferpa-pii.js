@@ -411,6 +411,33 @@ function buildBlockMessage(filePath, hits, ext, cleanupScriptPath) {
   return lines.join('\n');
 }
 
+// ---------------------------------------------------------------------------
+// Shell command advisory
+// The Read hook never sees files opened through Bash or PowerShell (pandas,
+// Get-Content, etc.). For those, detect data file references in the command
+// and remind the model not to print student PII. Advisory only: local scripts
+// that process data without printing it must keep working, so never block.
+// ---------------------------------------------------------------------------
+const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
+const DATA_FILE_TOKEN = /[^\s"'`|;<>()&]*\.(?:csv|tsv|xlsx|xlsm|xlsb|xls)\b/gi;
+
+function detectDataFileReferences(command) {
+  if (!command) return [];
+  const matches = command.match(DATA_FILE_TOKEN) || [];
+  return [...new Set(matches)];
+}
+
+function buildShellAdvisory(tokens) {
+  const shown = tokens.slice(0, 5).join(', ');
+  return (
+    `FERPA Guardrail advisory: this command references data file(s) (${shown}) ` +
+    'that may contain FERPA-protected student records. Do not print identifiable ' +
+    'rows or values to the terminal; anything printed enters the conversation and ' +
+    'is transmitted to the Claude API. Work with column names, counts, and ' +
+    'aggregates instead, and suppress aggregates where n < 10.'
+  );
+}
+
 function buildScanFailureMessage(filePath, reason, detail) {
   const fwdPath = filePath.replace(/\\/g, '/');
   const why = {
@@ -469,6 +496,18 @@ async function main() {
       'PII scanning was NOT performed on this file read. ' +
       'Check that the plugin is compatible with your Claude Code version.'
     );
+    return;
+  }
+
+  if (SHELL_TOOLS.has(parsed.tool_name)) {
+    const command = (parsed.tool_input || {}).command;
+    const tokens = detectDataFileReferences(command);
+    if (tokens.length === 0) {
+      allow();
+      return;
+    }
+    appendAuditLog({ action: 'advisory', tool: parsed.tool_name, files: tokens.slice(0, 5) });
+    allow(buildShellAdvisory(tokens));
     return;
   }
 
@@ -584,6 +623,8 @@ module.exports = {
   buildWelcomeMessage,
   writeCleanupScript,
   appendAuditLog,
+  detectDataFileReferences,
+  buildShellAdvisory,
   PII_PATTERNS,
   COMPILED_PATTERNS,
 };
