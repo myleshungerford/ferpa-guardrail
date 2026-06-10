@@ -132,7 +132,8 @@ function writeCleanupScript(filePath, hits, ext, overrideDir) {
     }
 
     const baseName = path.basename(filePath, ext);
-    const scriptPath = path.join(cleanupDir, `clean_${baseName}.js`);
+    // Include the extension so data.csv and data.xlsx don't overwrite each other
+    const scriptPath = path.join(cleanupDir, `clean_${baseName}_${ext.slice(1)}.js`);
     const fwdInput = filePath.replace(/\\/g, '/');
     const fwdOutput = fwdInput.replace(/(\.[^.]+)$/, '_cleaned$1');
     const dropCols = hits.map(h => h.column);

@@ -79,6 +79,20 @@ describe('writeCleanupScript', () => {
     // Cleanup
     fs_test.rmSync(tmpDir, { recursive: true });
   });
+
+  it('writes distinct scripts for same-basename files with different extensions', () => {
+    const tmpDir = fs_test.mkdtempSync(path_test.join(os_test.tmpdir(), 'ferpa-test-'));
+    const hits = [{ column: 'student_name', category: 'Student Name' }];
+    const csvScript = writeCleanupScript('/tmp/roster.csv', hits, '.csv', tmpDir);
+    const xlsxScript = writeCleanupScript('/tmp/roster.xlsx', hits, '.xlsx', tmpDir);
+    assert.notStrictEqual(csvScript, xlsxScript, 'roster.csv and roster.xlsx must not share a cleanup script path');
+    const csvContent = fs_test.readFileSync(csvScript, 'utf8');
+    const xlsxContent = fs_test.readFileSync(xlsxScript, 'utf8');
+    assert.ok(csvContent.includes('roster.csv'), 'CSV script should target the CSV file');
+    assert.ok(xlsxContent.includes('ExcelJS'), 'XLSX script should be the Excel variant');
+    // Cleanup
+    fs_test.rmSync(tmpDir, { recursive: true });
+  });
 });
 
 describe('buildWelcomeMessage', () => {
