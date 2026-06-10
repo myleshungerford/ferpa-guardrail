@@ -18,7 +18,7 @@ const os = require('os');
 // ---------------------------------------------------------------------------
 const PII_PATTERNS = [
   ['Student Name',         '(^|_)(first|last|middle|sur|given|preferred)(_?name)|student_?name|full_?name|person_?name|stu_?name'],
-  ['Student ID',           '(^|_)(student_?id|stu_?id|sid|banner_?id|emplid|empl_?id|people_?id|person_?id|spriden_?id|pidm|auid|uni_?id|university_?id|campus_?id|eagle_?id)'],
+  ['Student ID',           '(^|_)(student_?id|stu_?id|sid|banner_?id|emplid|empl_?id|people_?id|person_?id|spriden_?id|pidm|au_?id|uni_?id|university_?id|campus_?id|eagle_?id)'],
   ['SSN',                  '(^|_)(ssn|social_?sec(urity)?(_?(num(ber)?|no|nbr))?|soc_?sec(urity)?(_?(num(ber)?|no|nbr))?|ss_?num)($|_)'],
   ['Date of Birth',        '(^|_)(dob|date_?of_?birth|birth_?date|birthdate|birth_?day|birthday)'],
   ['Email',                '(^|_)(e_?mail|email_?addr(ess)?|student_?email|personal_?email|inst_?email|school_?email)($|_)'],

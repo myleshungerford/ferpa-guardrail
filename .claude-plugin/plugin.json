@@ -1,6 +1,6 @@
 {
   "name": "ferpa-guardrail",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Automatic FERPA PII detection guardrail for higher education. Scans data file headers before Claude reads them and blocks access when student personally identifiable information is detected.",
   "author": {
     "name": "Myles Hungerford",

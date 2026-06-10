@@ -27,6 +27,13 @@ describe('scanHeaders', () => {
     const hits = scanHeaders(headers);
     assert.strictEqual(hits.length, 0);
   });
+
+  it('flags AU ID as a student identifier (MicroStrategy display-style header)', () => {
+    const hits = scanHeaders(['AU ID', 'Term Gpa']);
+    assert.strictEqual(hits.length, 1);
+    assert.strictEqual(hits[0].column, 'AU ID');
+    assert.strictEqual(hits[0].category, 'Student ID');
+  });
 });
 
 describe('multi-sheet scanning', () => {

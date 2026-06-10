@@ -2,6 +2,11 @@
 
 Notable changes to the FERPA Guardrail plugin. Versions refer to the `version` field in `.claude-plugin/plugin.json`.
 
+## 1.2.1 (2026-06-10)
+
+### Fixed
+- The Student ID pattern matched `auid` but not `au_id`, so a column named "AU ID" (the display-style header MicroStrategy exports use) was not flagged. Validated against the headers of three real Coordinated Care exports: the scanner now catches all four PII columns in each (AU ID, preferred email, first name, last name) and none of the analytic columns. Found by checking the patterns against real export headers before working with the data, which is the recommended practice for any new report source.
+
 ## 1.2.0 (2026-06-10)
 
 ### Added
