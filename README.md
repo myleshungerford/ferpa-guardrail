@@ -84,7 +84,7 @@ This log provides auditable evidence for compliance reviews. It is local to your
 | Category | Example Column Names |
 |---|---|
 | Student names | first_name, last_name, student_name, full_name |
-| Student IDs | student_id, sid, banner_id, emplid, pidm, auid |
+| Student IDs | student_id, sid, banner_id, emplid, pidm, au_id |
 | SSN | ssn, social_security, ss_num |
 | Date of birth | dob, date_of_birth, birth_date |
 | Email | email, student_email, personal_email |
@@ -95,16 +95,29 @@ This log provides auditable evidence for compliance reviews. It is local to your
 
 Column matching is case-insensitive and handles variations in spacing, hyphens, and underscores.
 
+## Custom Patterns
+
+Every institution has its own identifier vocabulary (au_id at American, psu_id at Penn State, and so on). To add patterns without forking the plugin, create `~/.ferpa-guardrail/patterns.json` containing an array of `[category, regex]` pairs:
+
+```json
+[
+  ["Campus ID", "(^|_)psu_?id($|_)"],
+  ["Housing", "(^|_)room_?assignment($|_)"]
+]
+```
+
+Regexes are matched case-insensitively against normalized column names (lowercased, with spaces and hyphens replaced by underscores). Custom patterns extend the built-in list; built-ins always apply. If the file is malformed or an entry's regex is invalid, the bad entries are skipped and the problem is recorded in the audit log, so a broken custom file can only fail to add patterns, never weaken the defaults.
+
+If a pattern would be useful beyond your campus, please contribute it upstream via the pattern contribution issue template.
+
 ## Known Limitations
 
-- **Read tool only.** The hook intercepts Claude's Read tool. If data files are accessed through the Bash tool (e.g., `cat file.csv`, `python script.py`), the hook will not trigger. The behavioral skill (Layer 2) helps mitigate this, but cannot technically block it.
-- **Fails open on errors.** If the hook encounters an error (file not readable, malformed input, missing dependencies), it allows the read to proceed rather than blocking. This prevents the hook from disrupting normal work, but means a corrupted or unreadable file will not be scanned.
+- **Shell access is advisory, not blocked.** The hook blocks reads made through Claude's Read tool. Data files accessed through Bash or PowerShell (e.g., `cat file.csv`, `python script.py`) trigger an in-context reminder not to print student data, but the command itself is not blocked. The behavioral skill (Layer 2) mitigates further; shell access cannot be technically prevented.
+- **Fails closed on unscannable data files, open on hook errors.** Recognized data files that cannot be scanned (.xls, .xlsm, .xlsb, corrupt or password-protected files, or a missing Excel parser) are blocked, and the user is routed to CSV conversion. If the hook itself fails (malformed input, unexpected error), the read proceeds with a warning so a broken hook does not lock you out of normal work.
 - **Column-name heuristic only.** Columns with non-descriptive names (e.g., "field_7") containing PII will not be caught.
 - **Free-text blind spot.** A "comments" or "notes" column could contain embedded PII that the column-name scan will not detect.
 - **Small-n risk.** Aggregate statistics for small cohorts (fewer than 10 students) may allow re-identification.
 - **Not a substitute for an institutional data processing agreement** with Anthropic or any AI provider.
-- **Excel scanning requires the exceljs npm package.** Without it, .xlsx files are allowed through with a warning. Install with `npm install exceljs`.
-- **Legacy .xls not supported.** The hook scans .xlsx files only. If you have .xls files (Excel 97-2003 format), convert them to .xlsx first.
 
 ## Quick Test
 

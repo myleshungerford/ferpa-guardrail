@@ -341,12 +341,52 @@ async function getHeadersFromXlsx(filePath) {
   return [...allHeaders];
 }
 
-function scanHeaders(headers) {
+// ---------------------------------------------------------------------------
+// Custom patterns
+// Institutions have their own identifier vocabulary (au_id, psu_id, ...).
+// A local patterns file extends the built-in list without forking the plugin.
+// Built-in patterns always apply; a broken custom file can only fail to add
+// patterns, never weaken the defaults. Problems are recorded in the audit log.
+// ---------------------------------------------------------------------------
+function loadCustomPatterns(filePath, auditDir) {
+  const p = filePath || path.join(getFerpaDir(), 'patterns.json');
+  let entries;
+  try {
+    if (!fs.existsSync(p)) return [];
+    entries = JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch (_e) {
+    appendAuditLog({ action: 'custom-patterns-error', reason: 'unreadable-or-invalid-json' }, auditDir);
+    return [];
+  }
+  if (!Array.isArray(entries)) {
+    appendAuditLog({ action: 'custom-patterns-error', reason: 'not-an-array' }, auditDir);
+    return [];
+  }
+  const compiled = [];
+  entries.forEach((entry, i) => {
+    if (!Array.isArray(entry) || entry.length !== 2 ||
+        typeof entry[0] !== 'string' || typeof entry[1] !== 'string') {
+      appendAuditLog({ action: 'custom-patterns-error', reason: 'bad-entry', index: i }, auditDir);
+      return;
+    }
+    try {
+      compiled.push([entry[0], new RegExp(entry[1], 'i')]);
+    } catch (_re) {
+      appendAuditLog({ action: 'custom-patterns-error', reason: 'invalid-regex', category: entry[0] }, auditDir);
+    }
+  });
+  return compiled;
+}
+
+function scanHeaders(headers, extraPatterns) {
+  const patterns = (extraPatterns && extraPatterns.length)
+    ? COMPILED_PATTERNS.concat(extraPatterns)
+    : COMPILED_PATTERNS;
   const hits = [];
   for (const rawCol of headers) {
     const norm = normalise(rawCol);
     if (!norm) continue;
-    for (const [category, regex] of COMPILED_PATTERNS) {
+    for (const [category, regex] of patterns) {
       if (regex.test(norm)) {
         hits.push({ column: rawCol.trim(), category });
         break;
@@ -566,7 +606,7 @@ async function main() {
     return;
   }
 
-  const hits = scanHeaders(headers);
+  const hits = scanHeaders(headers, loadCustomPatterns());
 
   if (hits.length === 0) {
     appendAuditLog({
@@ -625,6 +665,7 @@ module.exports = {
   appendAuditLog,
   detectDataFileReferences,
   buildShellAdvisory,
+  loadCustomPatterns,
   PII_PATTERNS,
   COMPILED_PATTERNS,
 };

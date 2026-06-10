@@ -2,6 +2,14 @@
 
 Notable changes to the FERPA Guardrail plugin. Versions refer to the `version` field in `.claude-plugin/plugin.json`.
 
+## 1.3.0 (2026-06-10)
+
+### Added
+- Custom patterns file. Institutions can extend the built-in PII pattern list by creating `~/.ferpa-guardrail/patterns.json` (an array of `[category, regex]` pairs) instead of forking the plugin. Built-in patterns always apply; a malformed file or invalid regex can only fail to add patterns, never weaken the defaults, and any problem is recorded in the audit log. This makes the plugin usable at any university, since campus-specific identifier names (au_id, psu_id, and similar) no longer need to live in the plugin's code.
+
+### Fixed
+- README's Known Limitations section had drifted from actual behavior: it still described the pre-1.1.0 fail-open handling of unscannable Excel files and did not reflect the 1.2.0 shell advisory. Corrected to match what the plugin does.
+
 ## 1.2.1 (2026-06-10)
 
 ### Fixed

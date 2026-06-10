@@ -3,7 +3,7 @@ const assert = require('node:assert');
 const fs_test = require('fs');
 const path_test = require('path');
 const os_test = require('os');
-const { normalise, scanHeaders, buildBlockMessage, buildScanFailureMessage, buildWelcomeMessage, writeCleanupScript, appendAuditLog, detectDataFileReferences, buildShellAdvisory } = require('../scripts/check-ferpa-pii.js');
+const { normalise, scanHeaders, buildBlockMessage, buildScanFailureMessage, buildWelcomeMessage, writeCleanupScript, appendAuditLog, detectDataFileReferences, buildShellAdvisory, loadCustomPatterns } = require('../scripts/check-ferpa-pii.js');
 
 describe('normalise', () => {
   it('lowercases and replaces spaces/hyphens with underscores', () => {
@@ -123,6 +123,59 @@ describe('appendAuditLog', () => {
     assert.ok(entry.timestamp, 'Should have a timestamp');
     // Cleanup
     fs_test.rmSync(tmpDir, { recursive: true });
+  });
+});
+
+describe('loadCustomPatterns', () => {
+  function tmpPatternsFile(content) {
+    const dir = fs_test.mkdtempSync(path_test.join(os_test.tmpdir(), 'ferpa-test-'));
+    const file = path_test.join(dir, 'patterns.json');
+    if (content !== undefined) fs_test.writeFileSync(file, content);
+    return { dir, file };
+  }
+
+  it('returns an empty array when the file does not exist', () => {
+    const { dir, file } = tmpPatternsFile(undefined);
+    assert.deepStrictEqual(loadCustomPatterns(file, dir), []);
+    fs_test.rmSync(dir, { recursive: true });
+  });
+
+  it('loads valid patterns and scanHeaders flags columns matching them', () => {
+    const { dir, file } = tmpPatternsFile(JSON.stringify([['Campus ID', '(^|_)psu_?id($|_)']]));
+    const custom = loadCustomPatterns(file, dir);
+    assert.strictEqual(custom.length, 1);
+    const hits = scanHeaders(['PSU ID', 'Term Gpa'], custom);
+    assert.strictEqual(hits.length, 1);
+    assert.strictEqual(hits[0].column, 'PSU ID');
+    assert.strictEqual(hits[0].category, 'Campus ID');
+    fs_test.rmSync(dir, { recursive: true });
+  });
+
+  it('built-in patterns still apply alongside custom ones', () => {
+    const { dir, file } = tmpPatternsFile(JSON.stringify([['Campus ID', '(^|_)psu_?id($|_)']]));
+    const custom = loadCustomPatterns(file, dir);
+    const hits = scanHeaders(['PSU ID', 'student_name'], custom);
+    assert.strictEqual(hits.length, 2);
+    fs_test.rmSync(dir, { recursive: true });
+  });
+
+  it('returns an empty array for malformed JSON without throwing', () => {
+    const { dir, file } = tmpPatternsFile('not json {');
+    assert.deepStrictEqual(loadCustomPatterns(file, dir), []);
+    fs_test.rmSync(dir, { recursive: true });
+  });
+
+  it('skips invalid entries but keeps valid ones', () => {
+    const { dir, file } = tmpPatternsFile(JSON.stringify([
+      ['Campus ID', '(^|_)psu_?id($|_)'],
+      ['Bad Regex', '(unclosed'],
+      'not-a-pair',
+      ['Missing Pattern'],
+    ]));
+    const custom = loadCustomPatterns(file, dir);
+    assert.strictEqual(custom.length, 1);
+    assert.strictEqual(custom[0][0], 'Campus ID');
+    fs_test.rmSync(dir, { recursive: true });
   });
 });
 
